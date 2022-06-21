@@ -1,5 +1,7 @@
 package com.wannacode.bookingmicroservice.controller;
 
+import com.netflix.hystrix.contrib.javanica.annotation.HystrixCommand;
+import com.wannacode.bookingmicroservice.client.StockClient;
 import com.wannacode.bookingmicroservice.dto.OrderDTO;
 import com.wannacode.bookingmicroservice.entity.Order;
 import com.wannacode.bookingmicroservice.repository.OrderRepository;
@@ -18,16 +20,31 @@ public class BookingController {
     @Autowired
     private OrderRepository orderRepository;
 
+    @Autowired
+    private StockClient stockClient;
+
     @PostMapping("/order")
+    @HystrixCommand(fallbackMethod = "fallbackToStockService")
     public String saveOrder(@RequestBody OrderDTO orderDTO) {
 
-        Order order = new Order();
+        boolean inStock = orderDTO.getOrderItems().stream()
+                .allMatch(orderItem -> stockClient.stockAvailable(orderItem.getCode()));
 
-        order.setOrderNo(UUID.randomUUID().toString());
-        order.setOrderItems(orderDTO.getOrderItems());
+        if(inStock) {
+            Order order = new Order();
 
-        orderRepository.save(order);
+            order.setOrderNo(UUID.randomUUID().toString());
+            order.setOrderItems(orderDTO.getOrderItems());
 
-        return "Order Saved";
+            orderRepository.save(order);
+
+            return "Order Saved";
+        }
+
+        return "Order Cannot be Saved";
+    }
+
+    private String fallbackToStockService() {
+        return "Something went wrong, please try after some time";
     }
 }
